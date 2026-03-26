@@ -59,9 +59,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = update.message.photo[-1]
     file = await context.bot.get_file(photo.file_id)
 
-    file_path = "invoice.jpg"
-    await file.download_to_drive(file_path)
-
     await update.message.reply_text("Обрабатываю...")
 
     result = parse_invoice_image(file_path)
@@ -152,7 +149,7 @@ app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
 #app.run_polling()
 
-def test_moysklad_connection():
+def test_moylad_connection():
     url = f"{MS_BASE_URL}/entity/product?limit=1"
     response = requests.get(url, auth=MS_AUTH)
     print("MS STATUS:", response.status_code)
