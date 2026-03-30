@@ -2,7 +2,7 @@ from prompts import INVOICE_PARSE_PROMPT
 import base64
 import json
 import html
-
+from prompts import INVOICE_PARSE_PROMPT, SUPPLIER_PARSE_PROMPT
 import pandas as pd
 import requests
 
@@ -99,10 +99,21 @@ def normalize_text(text: str) -> str:
 def simplify_counterparty_name(name: str) -> str:
     name = normalize_text(name)
 
-    garbage = ["ип", "ооо", "зао", "ao", "llc"]
+    garbage_phrases = [
+        "общество с ограниченной ответственностью",
+        "индивидуальный предприниматель",
+        "акционерное общество",
+        "закрытое акционерное общество",
+        "открытое акционерное общество",
+    ]
 
-    for g in garbage:
-        name = name.replace(g, " ")
+    for phrase in garbage_phrases:
+        name = name.replace(phrase, " ")
+
+    garbage_words = ["ип", "ооо", "зао", "оао", "ао", "llc"]
+
+    for word in garbage_words:
+        name = name.replace(word, " ")
 
     return " ".join(name.split())
 
@@ -113,6 +124,28 @@ def extract_last_name(name: str):
         return None
     return words[0]
 
+FALLBACK_SUPPLIER_NAME = "Прочие поставщики"
+def parse_supplier_only(image_path: str) -> str:
+    with open(image_path, "rb") as f:
+        image_base64 = base64.b64encode(f.read()).decode("utf-8")
+
+    response = client.responses.create(
+        model="gpt-4.1-mini",
+        input=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": SUPPLIER_PARSE_PROMPT},
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:image/jpeg;base64,{image_base64}",
+                    },
+                ],
+            }
+        ],
+    )
+
+    return response.output_text
 
 def map_supplier_name(raw_supplier: str):
     normalized = normalize_text(raw_supplier)
@@ -344,18 +377,37 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(cleaned)
 
         data = json.loads(cleaned)
-
-        supplier = data.get("supplier")
         items = data.get("items", [])
+
+        # --- отдельный запрос на поставщика ---
+        supplier_result = parse_supplier_only(file_path)
+        print("RAW SUPPLIER RESULT:")
+        print(supplier_result)
+
+        supplier_cleaned = clean_json_text(supplier_result)
+        print("CLEANED SUPPLIER RESULT:")
+        print(supplier_cleaned)
+
+        supplier_data = json.loads(supplier_cleaned)
+        supplier = supplier_data.get("supplier")
 
         mapped_supplier = map_supplier_name(supplier)
         print("RAW SUPPLIER:", supplier)
         print("MAPPED SUPPLIER:", mapped_supplier)
 
         counterparty = search_counterparty_best(mapped_supplier)
+
+        supplier_warning = False
+
         if not counterparty:
-            await update.message.reply_text(f"Не найден контрагент: {supplier}")
-            return
+            supplier_warning = True
+            counterparty = search_counterparty_best(FALLBACK_SUPPLIER_NAME)
+
+            if not counterparty:
+                await update.message.reply_text(
+                    f"Не найден ни контрагент поставщика, ни fallback-контрагент: {supplier}"
+                )
+                return
 
         print("SUPPLIER:", supplier)
         print("ITEMS:", items)
@@ -403,7 +455,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         positions_count = len([x for x in matched if x["id"]])
 
         text = ""
-        text += f"<b>Поставщик:</b> {html.escape(str(supplier))}\n"
+
+        if supplier_warning:
+            text += "⚠️ <b>Поставщик не распознан уверенно</b>\n"
+            text += f"⚠️ <b>В приёмку подставлен контрагент:</b> {html.escape(FALLBACK_SUPPLIER_NAME)}\n\n"
+
+        text += f"<b>Поставщик из накладной:</b> {html.escape(str(supplier))}\n"
         text += f"<b>Контрагент в МойСклад:</b> {html.escape(str(counterparty['name']))}\n"
         text += "<b>Статус:</b> Черновик приёмки создан\n"
         text += f"<b>Позиций:</b> {positions_count}\n"
