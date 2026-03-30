@@ -1,279 +1,23 @@
-from prompts import INVOICE_PARSE_PROMPT
-import base64
 import json
-import pandas as pd
+import html
 import requests
-
 from openai import OpenAI
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
-from rapidfuzz import fuzz
-import html
 from telegram.constants import ParseMode
-from suppliers import SUPPLIER_MAP
-from utils import retry
+from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 from matcher import find_top_products
-from config import (
-    OPENAI_API_KEY,
-    TELEGRAM_BOT_TOKEN,
-    MS_BASE_URL,
-    MS_AUTH,
-)
+from config import (OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, MS_BASE_URL, MS_AUTH)
+from invoice_parser import (parse_invoice_image, parse_supplier_only, clean_json_text)
+from moysklad import (map_supplier_name, search_counterparty_best, create_supply_draft, normalize_text,)
+from catalog import load_products
 
-# --- OpenAI ---
+
 client = OpenAI(api_key=OPENAI_API_KEY)
 print("client accepted")
 
 TOKEN = TELEGRAM_BOT_TOKEN
 
-
-def clean_json_text(text: str) -> str:
-    text = text.strip()
-
-    if text.startswith("```json"):
-        text = text.removeprefix("```json").strip()
-    if text.startswith("```"):
-        text = text.removeprefix("```").strip()
-    if text.endswith("```"):
-        text = text.removesuffix("```").strip()
-
-    start = text.find("{")
-    end = text.rfind("}")
-
-    if start != -1 and end != -1:
-        text = text[start:end + 1]
-
-    return text
-
-
-@retry(max_attempts=3, delay=2, backoff=2)
-def parse_invoice_image(image_path):
-    with open(image_path, "rb") as f:
-        image_base64 = base64.b64encode(f.read()).decode("utf-8")
-
-    response = client.responses.create(
-        model="gpt-4.1-mini",
-        input=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": INVOICE_PARSE_PROMPT},
-                    {
-                        "type": "input_image",
-                        "image_url": f"data:image/jpeg;base64,{image_base64}",
-                    },
-                ],
-            }
-        ],
-    )
-
-    return response.output_text
-
-
-@retry(max_attempts=3, delay=1, backoff=2)
-def load_products():
-    df = pd.read_csv(
-        "products.csv",
-        sep=";",
-        usecols=["group_name", "product_id", "product_name"],
-    )
-    print("COLUMNS:", df.columns.tolist())
-    print(df.head())
-    return df
-
-
-def normalize_text(text: str) -> str:
-    return (
-        str(text)
-        .lower()
-        .replace('"', "")
-        .replace("«", "")
-        .replace("»", "")
-        .replace("  ", " ")
-        .strip()
-    )
-
-
-def simplify_counterparty_name(name: str) -> str:
-    name = normalize_text(name)
-
-    garbage = ["ип", "ооо", "зао", "ao", "llc"]
-
-    for g in garbage:
-        name = name.replace(g, " ")
-
-    return " ".join(name.split())
-
-
-def extract_last_name(name: str):
-    words = simplify_counterparty_name(name).split()
-    if not words:
-        return None
-    return words[0]
-
-
-def map_supplier_name(raw_supplier: str):
-    normalized = normalize_text(raw_supplier)
-
-    # сначала точное совпадение
-    for key, value in SUPPLIER_MAP.items():
-        if normalize_text(key) == normalized:
-            return value
-
-    # потом похожее совпадение
-    best_score = 0
-    best_value = raw_supplier
-
-    for key, value in SUPPLIER_MAP.items():
-        score = fuzz.ratio(normalize_text(key), normalized)
-        if score > best_score:
-            best_score = score
-            best_value = value
-
-    print("SUPPLIER MAP BEST SCORE:", best_score)
-
-    if best_score >= 85:
-        return best_value
-
-    return raw_supplier
-
-
-def test_moysklad_connection():
-    url = f"{MS_BASE_URL}/entity/product?limit=1"
-    response = requests.get(url, auth=MS_AUTH)
-    print("MS STATUS:", response.status_code)
-    print(response.text[:500])
-
-
-@retry(max_attempts=3, delay=2, backoff=2)
-def search_counterparty_best(query: str):
-    url = f"{MS_BASE_URL}/entity/counterparty"
-
-    target_full = normalize_text(query)
-    target_simple = simplify_counterparty_name(query)
-    last_name = extract_last_name(query)
-
-    print("QUERY:", query)
-    print("TARGET_FULL:", target_full)
-    print("TARGET_SIMPLE:", target_simple)
-    print("LAST_NAME:", last_name)
-
-    rows = []
-
-    # 1. сначала ищем по полной строке
-    if query:
-        response = requests.get(url, auth=MS_AUTH, params={"search": query, "limit": 50})
-        response.raise_for_status()
-        rows.extend(response.json().get("rows", []))
-
-    # 2. потом по упрощённой строке
-    if target_simple:
-        response = requests.get(url, auth=MS_AUTH, params={"search": target_simple, "limit": 50})
-        response.raise_for_status()
-        rows.extend(response.json().get("rows", []))
-
-    # 3. потом по фамилии
-    if last_name:
-        response = requests.get(url, auth=MS_AUTH, params={"search": last_name, "limit": 50})
-        response.raise_for_status()
-        rows.extend(response.json().get("rows", []))
-
-    # убираем дубли по id
-    unique_rows = {}
-    for r in rows:
-        unique_rows[r["id"]] = r
-    rows = list(unique_rows.values())
-
-    print("ROWS AFTER SEARCH:", len(rows))
-
-    if not rows:
-        return None
-
-    scored = []
-
-    for r in rows:
-        candidate_name = r["name"]
-        candidate_full = normalize_text(candidate_name)
-        candidate_simple = simplify_counterparty_name(candidate_name)
-
-        score_full = fuzz.ratio(target_full, candidate_full)
-        score_partial = fuzz.partial_ratio(target_simple, candidate_simple) if target_simple else 0
-        score_token = fuzz.token_sort_ratio(target_simple, candidate_simple) if target_simple else 0
-
-        score = max(score_full, score_partial, score_token)
-        scored.append((score, r))
-
-    scored.sort(reverse=True, key=lambda x: x[0])
-
-    print("TOP MATCHES:")
-    for score, r in scored[:10]:
-        print(score, "-", r["name"])
-
-    best_score, best = scored[0]
-
-    if best_score < 60:
-        print("BEST SCORE TOO LOW:", best_score)
-        return None
-
-    print("BEST:", best["name"])
-    return best
-
-
-def create_supply_draft(counterparty_meta, matched_items):
-    url = f"{MS_BASE_URL}/entity/supply"
-
-    organization_meta = get_organization_meta_by_name("ИП Губайдуллина Аида Рушановна")
-    store_meta = get_store_meta_by_name("Склад материалов")
-
-    if not organization_meta:
-        raise ValueError("Не найдена организация в МойСклад")
-
-    if not store_meta:
-        raise ValueError("Не найден склад в МойСклад")
-
-    positions = []
-
-    for item in matched_items:
-        if not item["id"]:
-            continue
-
-        positions.append({
-            "quantity": item["qty"],
-            "price": int(float(item["price"]) * 100),
-            "assortment": {
-                "meta": {
-                    "href": f"{MS_BASE_URL}/entity/product/{item['id']}",
-                    "type": "product",
-                    "mediaType": "application/json"
-                }
-            }
-        })
-
-    payload = {
-        "applicable": False,
-        "organization": {
-            "meta": organization_meta
-        },
-        "store": {
-            "meta": store_meta
-        },
-        "agent": {
-            "meta": counterparty_meta
-        },
-        "positions": positions
-    }
-
-    print("SUPPLY PAYLOAD:")
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
-
-    response = requests.post(url, auth=MS_AUTH, json=payload)
-
-    print("SUPPLY STATUS:", response.status_code)
-    print("SUPPLY RESPONSE:", response.text)
-
-    response.raise_for_status()
-    return response.json()
-
+FALLBACK_SUPPLIER_NAME = "Прочие поставщики"
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("PHOTO RECEIVED")
@@ -297,20 +41,37 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(cleaned)
 
         data = json.loads(cleaned)
-
-        supplier = data.get("supplier")
         items = data.get("items", [])
+
+        # --- отдельный запрос на поставщика ---
+        supplier_result = parse_supplier_only(file_path)
+        print("RAW SUPPLIER RESULT:")
+        print(supplier_result)
+
+        supplier_cleaned = clean_json_text(supplier_result)
+        print("CLEANED SUPPLIER RESULT:")
+        print(supplier_cleaned)
+
+        supplier_data = json.loads(supplier_cleaned)
+        supplier = supplier_data.get("supplier")
 
         mapped_supplier = map_supplier_name(supplier)
         print("RAW SUPPLIER:", supplier)
         print("MAPPED SUPPLIER:", mapped_supplier)
 
         counterparty = search_counterparty_best(mapped_supplier)
+
+        supplier_warning = False
+
         if not counterparty:
-            await update.message.reply_text(
-                f"Не найден контрагент: {supplier}"
-            )
-            return
+            supplier_warning = True
+            counterparty = search_counterparty_best(FALLBACK_SUPPLIER_NAME)
+
+            if not counterparty:
+                await update.message.reply_text(
+                    f"Не найден ни контрагент поставщика, ни fallback-контрагент: {supplier}"
+                )
+                return
 
         print("SUPPLIER:", supplier)
         print("ITEMS:", items)
@@ -358,9 +119,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         positions_count = len([x for x in matched if x["id"]])
 
         text = ""
-        text += f"<b>Поставщик:</b> {html.escape(str(supplier))}\n"
+
+        if supplier_warning:
+            text += "⚠️ <b>Поставщик не распознан уверенно</b>\n"
+            text += f"⚠️ <b>В приёмку подставлен контрагент:</b> {html.escape(FALLBACK_SUPPLIER_NAME)}\n\n"
+
+        text += f"<b>Поставщик из накладной:</b> {html.escape(str(supplier))}\n"
         text += f"<b>Контрагент в МойСклад:</b> {html.escape(str(counterparty['name']))}\n"
-        text += f"<b>Статус:</b> Черновик приёмки создан\n"
+        text += "<b>Статус:</b> Черновик приёмки создан\n"
         text += f"<b>Позиций:</b> {positions_count}\n"
 
         if supply_link:
@@ -375,7 +141,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             price_text = html.escape(str(m["price"]))
 
             text += f"• {raw_text} — {qty_text} шт × {price_text}\n"
-            text += f"  → {matched_text}\n"
+            text += f"  → <i>{matched_text}</i>\n"
 
         await update.message.reply_text(
             text,
@@ -392,59 +158,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("NORMALIZED:", normalize_text(supplier))
         traceback.print_exc()
 
-        await update.message.reply_text(
-            f"Ошибка обработки: {e}"
-        )
+        await update.message.reply_text(f"Ошибка обработки: {e}")
 
-def get_organization_meta_by_name(name: str):
-    url = f"{MS_BASE_URL}/entity/organization"
+def test_moysklad_connection():
+    url = f"{MS_BASE_URL}/entity/product?limit=1"
     response = requests.get(url, auth=MS_AUTH)
-    response.raise_for_status()
-
-    rows = response.json().get("rows", [])
-    for row in rows:
-        if normalize_text(row["name"]) == normalize_text(name):
-            return row["meta"]
-
-    return None
-
-
-def get_store_meta_by_name(name: str):
-    url = f"{MS_BASE_URL}/entity/store"
-    response = requests.get(url, auth=MS_AUTH)
-    response.raise_for_status()
-
-    rows = response.json().get("rows", [])
-    for row in rows:
-        if normalize_text(row["name"]) == normalize_text(name):
-            return row["meta"]
-
-    return None
-
-def get_organization_meta_by_name(name: str):
-    url = f"{MS_BASE_URL}/entity/organization"
-    response = requests.get(url, auth=MS_AUTH)
-    response.raise_for_status()
-
-    rows = response.json().get("rows", [])
-    for row in rows:
-        if normalize_text(row["name"]) == normalize_text(name):
-            return row["meta"]
-
-    return None
-
-
-def get_store_meta_by_name(name: str):
-    url = f"{MS_BASE_URL}/entity/store"
-    response = requests.get(url, auth=MS_AUTH)
-    response.raise_for_status()
-
-    rows = response.json().get("rows", [])
-    for row in rows:
-        if normalize_text(row["name"]) == normalize_text(name):
-            return row["meta"]
-
-    return None
+    print("MS STATUS:", response.status_code)
+    print(response.text[:500])
 
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
