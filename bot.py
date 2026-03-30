@@ -1,15 +1,17 @@
 from prompts import INVOICE_PARSE_PROMPT
 import base64
 import json
+import html
+
 import pandas as pd
 import requests
 
 from openai import OpenAI
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 from rapidfuzz import fuzz
-import html
-from telegram.constants import ParseMode
+
 from suppliers import SUPPLIER_MAP
 from utils import retry
 from matcher import find_top_products
@@ -47,7 +49,7 @@ def clean_json_text(text: str) -> str:
 
 
 @retry(max_attempts=3, delay=2, backoff=2)
-def parse_invoice_image(image_path):
+def parse_invoice_image(image_path: str) -> str:
     with open(image_path, "rb") as f:
         image_base64 = base64.b64encode(f.read()).decode("utf-8")
 
@@ -115,12 +117,12 @@ def extract_last_name(name: str):
 def map_supplier_name(raw_supplier: str):
     normalized = normalize_text(raw_supplier)
 
-    # сначала точное совпадение
+    # 1. точное совпадение
     for key, value in SUPPLIER_MAP.items():
         if normalize_text(key) == normalized:
             return value
 
-    # потом похожее совпадение
+    # 2. похожее совпадение
     best_score = 0
     best_value = raw_supplier
 
@@ -160,25 +162,25 @@ def search_counterparty_best(query: str):
 
     rows = []
 
-    # 1. сначала ищем по полной строке
+    # Поиск по полной строке
     if query:
         response = requests.get(url, auth=MS_AUTH, params={"search": query, "limit": 50})
         response.raise_for_status()
         rows.extend(response.json().get("rows", []))
 
-    # 2. потом по упрощённой строке
+    # Поиск по упрощённой строке
     if target_simple:
         response = requests.get(url, auth=MS_AUTH, params={"search": target_simple, "limit": 50})
         response.raise_for_status()
         rows.extend(response.json().get("rows", []))
 
-    # 3. потом по фамилии
+    # Поиск по фамилии
     if last_name:
         response = requests.get(url, auth=MS_AUTH, params={"search": last_name, "limit": 50})
         response.raise_for_status()
         rows.extend(response.json().get("rows", []))
 
-    # убираем дубли по id
+    # Убираем дубли
     unique_rows = {}
     for r in rows:
         unique_rows[r["id"]] = r
@@ -219,6 +221,49 @@ def search_counterparty_best(query: str):
     return best
 
 
+def search_product(query: str):
+    url = f"{MS_BASE_URL}/entity/product"
+    params = {"search": query, "limit": 10}
+
+    response = requests.get(url, auth=MS_AUTH, params=params)
+    print("STATUS:", response.status_code)
+
+    data = response.json()
+    rows = data.get("rows", [])
+
+    print("FOUND:", len(rows))
+    for r in rows:
+        print("-", r["name"])
+
+    return rows
+
+
+def get_organization_meta_by_name(name: str):
+    url = f"{MS_BASE_URL}/entity/organization"
+    response = requests.get(url, auth=MS_AUTH)
+    response.raise_for_status()
+
+    rows = response.json().get("rows", [])
+    for row in rows:
+        if normalize_text(row["name"]) == normalize_text(name):
+            return row["meta"]
+
+    return None
+
+
+def get_store_meta_by_name(name: str):
+    url = f"{MS_BASE_URL}/entity/store"
+    response = requests.get(url, auth=MS_AUTH)
+    response.raise_for_status()
+
+    rows = response.json().get("rows", [])
+    for row in rows:
+        if normalize_text(row["name"]) == normalize_text(name):
+            return row["meta"]
+
+    return None
+
+
 def create_supply_draft(counterparty_meta, matched_items):
     url = f"{MS_BASE_URL}/entity/supply"
 
@@ -237,30 +282,32 @@ def create_supply_draft(counterparty_meta, matched_items):
         if not item["id"]:
             continue
 
-        positions.append({
-            "quantity": item["qty"],
-            "price": int(float(item["price"]) * 100),
-            "assortment": {
-                "meta": {
-                    "href": f"{MS_BASE_URL}/entity/product/{item['id']}",
-                    "type": "product",
-                    "mediaType": "application/json"
-                }
+        positions.append(
+            {
+                "quantity": item["qty"],
+                "price": int(float(item["price"]) * 100),
+                "assortment": {
+                    "meta": {
+                        "href": f"{MS_BASE_URL}/entity/product/{item['id']}",
+                        "type": "product",
+                        "mediaType": "application/json",
+                    }
+                },
             }
-        })
+        )
 
     payload = {
         "applicable": False,
         "organization": {
-            "meta": organization_meta
+            "meta": organization_meta,
         },
         "store": {
-            "meta": store_meta
+            "meta": store_meta,
         },
         "agent": {
-            "meta": counterparty_meta
+            "meta": counterparty_meta,
         },
-        "positions": positions
+        "positions": positions,
     }
 
     print("SUPPLY PAYLOAD:")
@@ -307,9 +354,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         counterparty = search_counterparty_best(mapped_supplier)
         if not counterparty:
-            await update.message.reply_text(
-                f"Не найден контрагент: {supplier}"
-            )
+            await update.message.reply_text(f"Не найден контрагент: {supplier}")
             return
 
         print("SUPPLIER:", supplier)
@@ -360,7 +405,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = ""
         text += f"<b>Поставщик:</b> {html.escape(str(supplier))}\n"
         text += f"<b>Контрагент в МойСклад:</b> {html.escape(str(counterparty['name']))}\n"
-        text += f"<b>Статус:</b> Черновик приёмки создан\n"
+        text += "<b>Статус:</b> Черновик приёмки создан\n"
         text += f"<b>Позиций:</b> {positions_count}\n"
 
         if supply_link:
@@ -375,7 +420,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             price_text = html.escape(str(m["price"]))
 
             text += f"• {raw_text} — {qty_text} шт × {price_text}\n"
-            text += f"  → {matched_text}\n"
+            text += f"  → <i>{matched_text}</i>\n"
 
         await update.message.reply_text(
             text,
@@ -392,59 +437,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("NORMALIZED:", normalize_text(supplier))
         traceback.print_exc()
 
-        await update.message.reply_text(
-            f"Ошибка обработки: {e}"
-        )
+        await update.message.reply_text(f"Ошибка обработки: {e}")
 
-def get_organization_meta_by_name(name: str):
-    url = f"{MS_BASE_URL}/entity/organization"
-    response = requests.get(url, auth=MS_AUTH)
-    response.raise_for_status()
-
-    rows = response.json().get("rows", [])
-    for row in rows:
-        if normalize_text(row["name"]) == normalize_text(name):
-            return row["meta"]
-
-    return None
-
-
-def get_store_meta_by_name(name: str):
-    url = f"{MS_BASE_URL}/entity/store"
-    response = requests.get(url, auth=MS_AUTH)
-    response.raise_for_status()
-
-    rows = response.json().get("rows", [])
-    for row in rows:
-        if normalize_text(row["name"]) == normalize_text(name):
-            return row["meta"]
-
-    return None
-
-def get_organization_meta_by_name(name: str):
-    url = f"{MS_BASE_URL}/entity/organization"
-    response = requests.get(url, auth=MS_AUTH)
-    response.raise_for_status()
-
-    rows = response.json().get("rows", [])
-    for row in rows:
-        if normalize_text(row["name"]) == normalize_text(name):
-            return row["meta"]
-
-    return None
-
-
-def get_store_meta_by_name(name: str):
-    url = f"{MS_BASE_URL}/entity/store"
-    response = requests.get(url, auth=MS_AUTH)
-    response.raise_for_status()
-
-    rows = response.json().get("rows", [])
-    for row in rows:
-        if normalize_text(row["name"]) == normalize_text(name):
-            return row["meta"]
-
-    return None
 
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
