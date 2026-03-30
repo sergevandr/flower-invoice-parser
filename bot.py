@@ -11,7 +11,6 @@ from invoice_parser import (parse_invoice_image, parse_supplier_only, clean_json
 from moysklad import (map_supplier_name, search_counterparty_best, create_supply_draft, normalize_text,)
 from catalog import load_products
 
-
 client = OpenAI(api_key=OPENAI_API_KEY)
 print("client accepted")
 
