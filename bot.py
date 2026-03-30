@@ -2,11 +2,14 @@ import json
 import html
 import requests
 from openai import OpenAI
+
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+
 from matcher import find_top_products
 from config import (OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, MS_BASE_URL, MS_AUTH)
+
 from invoice_parser import (parse_invoice_image, parse_supplier_only, clean_json_text)
 from moysklad import (map_supplier_name, search_counterparty_best, create_supply_draft, normalize_text,)
 from catalog import load_products
