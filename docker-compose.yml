@@ -1,9 +1,0 @@
-version: "3.9"
-
-services:
-  bot:
-    build: .
-    container_name: ai-invoice-bot
-    env_file:
-      - .env
-    restart: always

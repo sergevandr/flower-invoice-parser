@@ -1,0 +1,9 @@
+services:
+  bot:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    container_name: ai-invoice-bot
+    env_file:
+      - ../.env
+    restart: unless-stopped

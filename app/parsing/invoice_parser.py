@@ -1,9 +1,9 @@
 import base64
-from prompts import SUPPLIER_PARSE_PROMPT
+from app.prompts import SUPPLIER_PARSE_PROMPT
 from openai import OpenAI
-from utils import retry
-from prompts import INVOICE_PARSE_PROMPT
-from config import OPENAI_API_KEY
+from app.common.utils import retry
+from app.prompts import INVOICE_PARSE_PROMPT
+from app.config import OPENAI_API_KEY
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 

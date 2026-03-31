@@ -7,12 +7,12 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
-from matcher import find_top_products
-from config import (OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, MS_BASE_URL, MS_AUTH)
+from app.matching.product_matcher import find_top_products
+from app.config import (OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, MS_BASE_URL, MS_AUTH)
 
-from invoice_parser import (parse_invoice_image, parse_supplier_only, clean_json_text)
-from moysklad import (map_supplier_name, search_counterparty_best, create_supply_draft, normalize_text,)
-from catalog import load_products
+from app.parsing.invoice_parser import (parse_invoice_image, parse_supplier_only, clean_json_text)
+from app.integrations.moysklad_client import (map_supplier_name, search_counterparty_best, create_supply_draft, normalize_text, )
+from app.matching.product_catalog import load_products
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 print("client accepted")
@@ -28,7 +28,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = update.message.photo[-1]
     file = await context.bot.get_file(photo.file_id)
 
-    file_path = "invoice.jpg"
+    file_path = "../invoice.jpg"
     await file.download_to_drive(file_path)
 
     await update.message.reply_text("Обрабатываю...")
@@ -170,4 +170,5 @@ def test_moysklad_connection():
 
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-app.run_polling()
+if __name__ == "__main__":
+    app.run_polling()
