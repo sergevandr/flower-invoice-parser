@@ -1,9 +1,9 @@
 from rapidfuzz import fuzz
-from suppliers import SUPPLIER_MAP
-from utils import retry
+from app.matching.supplier_mapping import SUPPLIER_MAP
+from app.common.utils import retry
 import json
 import requests
-from config import MS_BASE_URL, MS_AUTH
+from app.config import MS_BASE_URL, MS_AUTH
 
 def normalize_text(text: str) -> str:
     return (
