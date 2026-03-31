@@ -1,6 +1,8 @@
-.idea
-.DS_Store
 .env
-.venv
-__pycache__
+.venv/
+venv/
+__pycache__/
+*.pyc
+.idea/
+.DS_Store
 invoice.jpg
