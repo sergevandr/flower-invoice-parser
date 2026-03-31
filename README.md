@@ -66,42 +66,48 @@ docker run –env-file .env ai-invoice-bot
 ## Структура проекта
 
 ```text
-project_root/
+flower-invoice-parser/
+├── app/
+│   ├── __init__.py
+│   ├── bot.py                     # точка входа Telegram-бота
+│   ├── config.py                  # загрузка конфигурации и переменных окружения
+│   ├── prompts.py                 # промпты для OpenAI
+│   │
+│   ├── parsing/
+│   │   ├── __init__.py
+│   │   └── invoice_parser.py      # парсинг накладной через OpenAI
+│   │
+│   ├── matching/
+│   │   ├── __init__.py
+│   │   ├── product_catalog.py     # загрузка каталога товаров
+│   │   ├── product_matcher.py     # сопоставление товаров
+│   │   └── supplier_mapping.py    # сопоставление поставщиков
+│   │
+│   ├── integrations/
+│   │   ├── __init__.py
+│   │   └── moysklad_client.py     # интеграция с API МойСклад
+│   │
+│   └── common/
+│       ├── __init__.py
+│       └── utils.py               # вспомогательные функции
 │
-├── bot.py                    # Telegram-бот, orchestration всего процесса
+├── data/
+│   └── products.csv               # каталог товаров для матчинга
 │
-├── invoice_parser.py         # Парсинг накладной и поставщика через GPT
-├── matcher.py                # Сопоставление товаров (fuzzy matching)
-├── catalog.py                # Загрузка каталога товаров
-├── moysklad.py               # Работа с API МойСклад (контрагенты, приёмка)
+├── deployment/
+│   ├── Dockerfile                 # Docker-образ проекта
+│   └── docker-compose.yml         # конфигурация запуска через Docker Compose
 │
-├── suppliers.py              # Словарь известных поставщиков
-├── prompts.py                # Промпты для GPT
-├── utils.py                  # Вспомогательные функции (retry и др.)
-├── config.py                 # Загрузка конфигурации и переменных окружения
-│
-├── products.csv              # Каталог товаров для матчинга
-│
-├── .env                      # Секреты (НЕ коммитится)
-├── .env.example              # Пример переменных окружения
-├── .gitignore                # Игнорируемые файлы
-│
-├── requirements.txt          # Зависимости проекта
-├── README.md                 # Документация
-│
-└── .venv/                    # Виртуальное окружение (локально)
+├── .dockerignore
+├── .env.example
+├── .gitignore
+├── README.md
+└── requirements.txt
 ```
 ---
 
-## Выдачи
-
-Поставщик: ИП Иванов / Мир цветов
-
-Позиций: 1  
-
-• Fritillaria orange beauty → Фритиллярия рыжая | 10 шт × 379.05  
-
-Ссылка на приёмку  
+## Пример выдачи
+![Demo](assets/demo.png)
 
 ---
 
