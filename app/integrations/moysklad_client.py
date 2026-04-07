@@ -243,6 +243,9 @@ def create_supply_draft(counterparty_meta, matched_items, invoice_number=None, i
     print("SUPPLY STATUS:", response.status_code)
     print("SUPPLY RESPONSE:", response.text)
 
+    response.raise_for_status()
+    return response.json()
+
 def create_payment_out_for_supply(
         counterparty_meta,
         organization_meta,
@@ -275,8 +278,6 @@ def create_payment_out_for_supply(
     response = requests.post(url, auth=MS_AUTH, json=payload)
     print("PAYMENT OUT STATUS:", response.status_code)
     print("PAYMENT OUT RESPONSE:", response.text)
-    response.raise_for_status()
-    return response.json()
 
     response.raise_for_status()
     return response.json()
