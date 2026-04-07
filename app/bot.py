@@ -14,6 +14,8 @@ from app.parsing.invoice_parser import (parse_invoice_image, parse_supplier_only
 from app.integrations.moysklad_client import (map_supplier_name, search_counterparty_best, create_supply_draft, normalize_text, )
 from app.matching.product_catalog import load_products
 
+from app.config import DEFAULT_ORGANIZATION_ACCOUNT_META
+
 client = OpenAI(api_key=OPENAI_API_KEY)
 print("client accepted")
 
@@ -126,6 +128,31 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         supply_link = supply.get("meta", {}).get("uuidHref")
         print("SUPPLY LINK:", supply_link)
 
+        payment = None
+        payment_link = None
+
+        from app.matching.supplier_mapping import AUTO_PAYMENT_SUPPLIERS
+        from app.integrations.moysklad_client import create_payment_out_for_supply
+        from app.config import DEFAULT_ORGANIZATION_ACCOUNT_META
+        from app.integrations.moysklad_client import normalize_text
+
+        normalized_name = normalize_text(counterparty["name"])
+
+        if normalized_name in AUTO_PAYMENT_SUPPLIERS:
+            supply_sum = supply.get("sum")
+
+            if supply_sum:
+                payment = create_payment_out_for_supply(
+                    counterparty_meta=counterparty["meta"],
+                    organization_meta=supply["organization"]["meta"],
+                    organization_account_meta=DEFAULT_ORGANIZATION_ACCOUNT_META,
+                    supply_meta=supply["meta"],
+                    payment_sum=supply_sum,
+                    payment_purpose=f"Оплата по приёмке {supply.get('name')}",
+                )
+
+                payment_link = payment.get("meta", {}).get("uuidHref")
+
         positions_count = len([x for x in matched if x["id"]])
 
         extra_info = ""
@@ -141,6 +168,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if supplier_warning:
             text += "⚠️ <b>Поставщик не распознан уверенно</b>\n"
             text += f"⚠️ <b>В приёмку подставлен контрагент:</b> {html.escape(FALLBACK_SUPPLIER_NAME)}\n\n"
+
+        if payment:
+            text += "<b>❗️Платёж:</b> создан\n"
+
+        if payment_link:
+            text += f"<a href=\"{html.escape(payment_link)}\">Открыть платёж</a>\n"
 
         text += f"<b>Поставщик из накладной:</b> {html.escape(str(supplier))}\n"
         text += f"<b>Контрагент в МойСклад:</b> {html.escape(str(counterparty['name']))}\n"
