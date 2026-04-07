@@ -166,8 +166,7 @@ def get_store_meta_by_name(name: str):
 
     return None
 
-
-def create_supply_draft(counterparty_meta, matched_items):
+def create_supply_draft(counterparty_meta, matched_items, invoice_number=None, invoice_date=None):
     url = f"{MS_BASE_URL}/entity/supply"
 
     organization_meta = get_organization_meta_by_name("ИП Губайдуллина Аида Рушановна")
@@ -199,6 +198,16 @@ def create_supply_draft(counterparty_meta, matched_items):
             }
         )
 
+    description_parts = []
+
+    if invoice_number:
+        description_parts.append(f"Номер накладной: {invoice_number}")
+
+    if invoice_date:
+        description_parts.append(f"Дата накладной: {invoice_date}")
+
+    description = "\n".join(description_parts) if description_parts else ""
+
     payload = {
         "applicable": False,
         "organization": {
@@ -211,6 +220,7 @@ def create_supply_draft(counterparty_meta, matched_items):
             "meta": counterparty_meta,
         },
         "positions": positions,
+        "description": description,
     }
 
     print("SUPPLY PAYLOAD:")

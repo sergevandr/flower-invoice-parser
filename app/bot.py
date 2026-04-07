@@ -112,7 +112,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 }
             )
 
-        supply = create_supply_draft(counterparty["meta"], matched)
+        invoice_number = data.get("invoice_number")
+        invoice_date = data.get("invoice_date")
+
+        supply = create_supply_draft(
+            counterparty["meta"],
+            matched,
+            invoice_number=invoice_number,
+            invoice_date=invoice_date,
+        )
         print("SUPPLY CREATED:", supply.get("name"), supply.get("id"))
 
         supply_link = supply.get("meta", {}).get("uuidHref")
