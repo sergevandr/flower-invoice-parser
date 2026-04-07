@@ -13,6 +13,10 @@ from app.config import (OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, MS_BASE_URL, MS_AUTH
 from app.parsing.invoice_parser import (parse_invoice_image, parse_supplier_only, clean_json_text)
 from app.integrations.moysklad_client import (map_supplier_name, search_counterparty_best, create_supply_draft, normalize_text, )
 from app.matching.product_catalog import load_products
+from app.matching.supplier_mapping import AUTO_PAYMENT_SUPPLIERS
+from app.integrations.moysklad_client import create_payment_out_for_supply
+from app.config import DEFAULT_ORGANIZATION_ACCOUNT_META
+from app.integrations.moysklad_client import normalize_text
 
 from app.config import DEFAULT_ORGANIZATION_ACCOUNT_META
 
@@ -131,15 +135,17 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payment = None
         payment_link = None
 
-        from app.matching.supplier_mapping import AUTO_PAYMENT_SUPPLIERS
-        from app.integrations.moysklad_client import create_payment_out_for_supply
-        from app.config import DEFAULT_ORGANIZATION_ACCOUNT_META
-        from app.integrations.moysklad_client import normalize_text
+        print("COUNTERPARTY NAME:", counterparty["name"])
 
         normalized_name = normalize_text(counterparty["name"])
 
+        print("NORMALIZED COUNTERPARTY NAME:", normalized_name)
+        print("AUTO PAYMENT SUPPLIERS:", AUTO_PAYMENT_SUPPLIERS)
+
         if normalized_name in AUTO_PAYMENT_SUPPLIERS:
+            print("AUTO PAYMENT TRIGGERED")
             supply_sum = supply.get("sum")
+            print("SUPPLY SUM:", supply_sum)
 
             if supply_sum:
                 payment = create_payment_out_for_supply(
@@ -152,6 +158,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
 
                 payment_link = payment.get("meta", {}).get("uuidHref")
+                print("PAYMENT LINK:", payment_link)
 
         positions_count = len([x for x in matched if x["id"]])
 
