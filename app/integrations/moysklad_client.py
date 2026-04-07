@@ -243,40 +243,40 @@ def create_supply_draft(counterparty_meta, matched_items, invoice_number=None, i
     print("SUPPLY STATUS:", response.status_code)
     print("SUPPLY RESPONSE:", response.text)
 
-    def create_payment_out_for_supply(
-            counterparty_meta,
-            organization_meta,
-            organization_account_meta,
-            supply_meta,
-            payment_sum,
-            payment_purpose="Автоматически созданный платеж",
-    ):
-        url = f"{MS_BASE_URL}/entity/paymentout"
+def create_payment_out_for_supply(
+        counterparty_meta,
+        organization_meta,
+        organization_account_meta,
+        supply_meta,
+        payment_sum,
+        payment_purpose="Автоматически созданный платеж",
+):
+    url = f"{MS_BASE_URL}/entity/paymentout"
 
-        payload = {
-            "organization": {
-                "meta": organization_meta,
-            },
-            "organizationAccount": {
-                "meta": organization_account_meta,
-            },
-            "agent": {
-                "meta": counterparty_meta,
-            },
-            "sum": payment_sum,
-            "operations": [
-                {
-                    "meta": supply_meta,
-                }
-            ],
-            "paymentPurpose": payment_purpose,
-        }
+    payload = {
+        "organization": {
+            "meta": organization_meta,
+        },
+        "organizationAccount": {
+            "meta": organization_account_meta,
+        },
+        "agent": {
+            "meta": counterparty_meta,
+        },
+        "sum": payment_sum,
+        "operations": [
+            {
+                "meta": supply_meta,
+            }
+        ],
+        "paymentPurpose": payment_purpose,
+    }
 
-        response = requests.post(url, auth=MS_AUTH, json=payload)
-        print("PAYMENT OUT STATUS:", response.status_code)
-        print("PAYMENT OUT RESPONSE:", response.text)
-        response.raise_for_status()
-        return response.json()
+    response = requests.post(url, auth=MS_AUTH, json=payload)
+    print("PAYMENT OUT STATUS:", response.status_code)
+    print("PAYMENT OUT RESPONSE:", response.text)
+    response.raise_for_status()
+    return response.json()
 
     response.raise_for_status()
     return response.json()
