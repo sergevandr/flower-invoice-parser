@@ -145,11 +145,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"<b>Поставщик из накладной:</b> {html.escape(str(supplier))}\n"
         text += f"<b>Контрагент в МойСклад:</b> {html.escape(str(counterparty['name']))}\n"
         text += "<b>Статус:</b> Черновик приёмки создан\n"
-        text += f"<b>Позиций:</b> {positions_count}\n"
 
         if supply_link:
             text += f"<b>Ссылка:</b> <a href=\"{html.escape(supply_link)}\">Открыть приёмку в МойСклад</a>\n"
 
+        text += f"<b>Позиций:</b> {positions_count}\n"
         text += "\n<b>Позиции:</b>\n"
 
         for m in matched:
@@ -161,17 +161,17 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"• {raw_text} — {qty_text} шт × {price_text}\n"
             text += f"  → <i>{matched_text}</i>\n"
 
-        await update.message.reply_text(
-            text,
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-        )
-
         if invoice_number:
             text += f"<b>Номер накладной:</b> {html.escape(str(invoice_number))}\n"
 
         if invoice_date:
             text += f"<b>Дата накладной:</b> {html.escape(str(invoice_date))}\n"
+
+        await update.message.reply_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
 
 
     except Exception as e:
