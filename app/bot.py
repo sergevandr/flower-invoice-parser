@@ -128,6 +128,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         positions_count = len([x for x in matched if x["id"]])
 
+        extra_info = ""
+
+        if invoice_number:
+            extra_info += f"\nНомер накладной: {invoice_number}"
+
+        if invoice_date:
+            extra_info += f"\nДата накладной: {invoice_date}"
+
         text = ""
 
         if supplier_warning:
@@ -158,6 +166,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
         )
+
+        if invoice_number:
+            text += f"<b>Номер накладной:</b> {html.escape(str(invoice_number))}\n"
+
+        if invoice_date:
+            text += f"<b>Дата накладной:</b> {html.escape(str(invoice_date))}\n"
+
 
     except Exception as e:
         import traceback

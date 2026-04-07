@@ -223,6 +223,12 @@ def create_supply_draft(counterparty_meta, matched_items, invoice_number=None, i
         "description": description,
     }
 
+    if invoice_number:
+        payload["incomingNumber"] = invoice_number
+
+    if invoice_date:
+        payload["incomingDate"] = f"{invoice_date} 00:00:00"
+
     print("SUPPLY PAYLOAD:")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
