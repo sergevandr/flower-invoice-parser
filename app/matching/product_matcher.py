@@ -21,7 +21,12 @@ FLOWER_ALIASES = {
     "мускари": ["мускари", "muscari"],
     "гиппеаструм": ["гиппеаструм", "hippeastrum", "амарилис"],
     "душистый горошек": ["душистый горошек", "lathyrus"],
+    "антуриум": ["антуриум", "anthurium"],
+    "вибурнум": ["вибурнум", "viburnum", "калина"],
+    "трахелиум": ["трахелиум", "trachelium"],
+    "цирсиум": ["цирсиум", "cirsium", "бодяк"],
 }
+
 
 def detect_flower_type(text: str):
     text = str(text).lower()
@@ -35,23 +40,18 @@ def detect_flower_type(text: str):
 def detect_item_class(text: str):
     text = str(text).lower()
 
-    if any(x in text for x in [
-        "корзин", "basket"
-    ]):
+    if any(x in text for x in ["корзин", "basket"]):
         return "basket"
 
-    if any(x in text for x in [
-        "букет", "bouquet"
-    ]):
+    if any(x in text for x in ["букет", "bouquet"]):
         return "bouquet"
 
-    if any(x in text for x in [
-        "ваза", "vase"
-    ]):
+    if any(x in text for x in ["ваза", "vase"]):
         return "vase"
 
     if any(x in text for x in [
-        "лента", "пленка", "бумага", "коробка", "каркас", "оазис", "foam", "ribbon", "wrap"
+        "лента", "пленка", "бумага", "коробка", "каркас", "оазис",
+        "foam", "ribbon", "wrap"
     ]):
         return "material"
 
@@ -84,6 +84,7 @@ def get_sort_part(text: str):
 
     return " ".join(text.split())
 
+
 def normalize_sort_text(text: str):
     text = str(text).lower()
 
@@ -109,6 +110,7 @@ def normalize_sort_text(text: str):
         text = text.replace(k, v)
 
     return " ".join(text.split())
+
 
 def find_top_products(raw_name: str, df, top_n=3):
     raw = str(raw_name).lower().strip()
@@ -138,6 +140,12 @@ def find_top_products(raw_name: str, df, top_n=3):
 
         score = base_score + sort_score * 0.4 + partial_sort_score * 0.5
 
+        if raw_type is None and raw_sort and product_sort:
+            if raw_sort == product_sort:
+                score += 140
+            elif raw_sort in product_sort:
+                score += 100
+
         if raw in product_name_l:
             score += 120
 
@@ -148,17 +156,24 @@ def find_top_products(raw_name: str, df, top_n=3):
             score += 15
 
         product_type = detect_flower_type(product_name_l + " " + group_name_l)
-        if raw_type and product_type and raw_type == product_type:
-            score += 35
+
+        if raw_type and product_type:
+            if raw_type == product_type:
+                score += 90
+            else:
+                score -= 140
 
         if raw_type and raw_type in group_name_l:
-            score += 20
+            score += 30
+
+        if raw_type and raw_type in product_name_l:
+            score += 25
 
         if item_class == "flower":
             if any(x in group_name_l for x in [
                 "вазы", "флористические материалы", "упаковка", "ленты", "корзины"
             ]):
-                score -= 25
+                score -= 80
 
         elif item_class == "basket":
             if "корзин" in group_name_l:
