@@ -13,6 +13,12 @@ from app.config import (OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, MS_BASE_URL, MS_AUTH
 from app.parsing.invoice_parser import (parse_invoice_image, parse_supplier_only, clean_json_text)
 from app.integrations.moysklad_client import (map_supplier_name, search_counterparty_best, create_supply_draft, normalize_text, )
 from app.matching.product_catalog import load_products
+from app.matching.supplier_mapping import AUTO_PAYMENT_SUPPLIERS
+from app.integrations.moysklad_client import create_payment_out_for_supply
+from app.config import DEFAULT_ORGANIZATION_ACCOUNT_META
+from app.integrations.moysklad_client import normalize_text
+
+from app.config import DEFAULT_ORGANIZATION_ACCOUNT_META
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 print("client accepted")
@@ -112,13 +118,58 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 }
             )
 
-        supply = create_supply_draft(counterparty["meta"], matched)
+        invoice_number = data.get("invoice_number")
+        invoice_date = data.get("invoice_date")
+
+        supply = create_supply_draft(
+            counterparty["meta"],
+            matched,
+            invoice_number=invoice_number,
+            invoice_date=invoice_date,
+        )
         print("SUPPLY CREATED:", supply.get("name"), supply.get("id"))
 
         supply_link = supply.get("meta", {}).get("uuidHref")
         print("SUPPLY LINK:", supply_link)
 
+        payment = None
+        payment_link = None
+
+        print("COUNTERPARTY NAME:", counterparty["name"])
+
+        normalized_name = normalize_text(counterparty["name"])
+
+        print("NORMALIZED COUNTERPARTY NAME:", normalized_name)
+        print("AUTO PAYMENT SUPPLIERS:", AUTO_PAYMENT_SUPPLIERS)
+
+        if normalized_name in AUTO_PAYMENT_SUPPLIERS:
+            print("AUTO PAYMENT TRIGGERED")
+            supply_sum = supply.get("sum")
+            print("SUPPLY SUM:", supply_sum)
+
+            if supply_sum:
+                payment = create_payment_out_for_supply(
+                    counterparty_meta=counterparty["meta"],
+                    organization_meta=supply["organization"]["meta"],
+                    organization_account_meta=DEFAULT_ORGANIZATION_ACCOUNT_META,
+                    supply_meta=supply["meta"],
+                    payment_sum=supply_sum,
+                    invoice_date=invoice_date,
+                    payment_purpose=f"Оплата по приёмке {supply.get('name')}",
+                )
+
+                payment_link = payment.get("meta", {}).get("uuidHref")
+                print("PAYMENT LINK:", payment_link)
+
         positions_count = len([x for x in matched if x["id"]])
+
+        extra_info = ""
+
+        if invoice_number:
+            extra_info += f"\nНомер накладной: {invoice_number}"
+
+        if invoice_date:
+            extra_info += f"\nДата накладной: {invoice_date}"
 
         text = ""
 
@@ -126,14 +177,20 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += "⚠️ <b>Поставщик не распознан уверенно</b>\n"
             text += f"⚠️ <b>В приёмку подставлен контрагент:</b> {html.escape(FALLBACK_SUPPLIER_NAME)}\n\n"
 
+        if payment:
+            text += "<b>❗️Платёж:</b> создан\n"
+
+        if payment_link:
+            text += f"<a href=\"{html.escape(payment_link)}\">Открыть платёж</a>\n"
+
         text += f"<b>Поставщик из накладной:</b> {html.escape(str(supplier))}\n"
         text += f"<b>Контрагент в МойСклад:</b> {html.escape(str(counterparty['name']))}\n"
         text += "<b>Статус:</b> Черновик приёмки создан\n"
-        text += f"<b>Позиций:</b> {positions_count}\n"
 
         if supply_link:
             text += f"<b>Ссылка:</b> <a href=\"{html.escape(supply_link)}\">Открыть приёмку в МойСклад</a>\n"
 
+        text += f"<b>Позиций:</b> {positions_count}\n"
         text += "\n<b>Позиции:</b>\n"
 
         for m in matched:
@@ -145,11 +202,18 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"• {raw_text} — {qty_text} шт × {price_text}\n"
             text += f"  → <i>{matched_text}</i>\n"
 
+        if invoice_number:
+            text += f"<b>Номер накладной:</b> {html.escape(str(invoice_number))}\n"
+
+        if invoice_date:
+            text += f"<b>Дата накладной:</b> {html.escape(str(invoice_date))}\n"
+
         await update.message.reply_text(
             text,
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
         )
+
 
     except Exception as e:
         import traceback

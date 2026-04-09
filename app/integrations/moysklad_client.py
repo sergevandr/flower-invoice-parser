@@ -166,8 +166,7 @@ def get_store_meta_by_name(name: str):
 
     return None
 
-
-def create_supply_draft(counterparty_meta, matched_items):
+def create_supply_draft(counterparty_meta, matched_items, invoice_number=None, invoice_date=None):
     url = f"{MS_BASE_URL}/entity/supply"
 
     organization_meta = get_organization_meta_by_name("ИП Губайдуллина Аида Рушановна")
@@ -199,6 +198,16 @@ def create_supply_draft(counterparty_meta, matched_items):
             }
         )
 
+    description_parts = []
+
+    if invoice_number:
+        description_parts.append(f"Номер накладной: {invoice_number}")
+
+    if invoice_date:
+        description_parts.append(f"Дата накладной: {invoice_date}")
+
+    description = "\n".join(description_parts) if description_parts else ""
+
     payload = {
         "applicable": False,
         "organization": {
@@ -211,7 +220,18 @@ def create_supply_draft(counterparty_meta, matched_items):
             "meta": counterparty_meta,
         },
         "positions": positions,
+        "description": description,
     }
+
+    if invoice_number:
+        payload["incomingNumber"] = invoice_number
+
+    if invoice_date:
+        payload["incomingDate"] = f"{invoice_date} 00:00:00"
+
+    if invoice_date:
+        payload["moment"] = f"{invoice_date} 00:00:00"
+
 
     print("SUPPLY PAYLOAD:")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -220,6 +240,68 @@ def create_supply_draft(counterparty_meta, matched_items):
 
     print("SUPPLY STATUS:", response.status_code)
     print("SUPPLY RESPONSE:", response.text)
+
+    response.raise_for_status()
+    return response.json()
+
+def get_expense_item_meta_by_name(name: str):
+    url = f"{MS_BASE_URL}/entity/expenseitem"
+    response = requests.get(url, auth=MS_AUTH)
+    response.raise_for_status()
+
+    rows = response.json().get("rows", [])
+    for row in rows:
+        if normalize_text(row["name"]) == normalize_text(name):
+            return row["meta"]
+
+    return None
+
+def create_payment_out_for_supply(
+        counterparty_meta,
+        organization_meta,
+        organization_account_meta,
+        supply_meta,
+        payment_sum,
+        invoice_date=None,
+        payment_purpose="Автоматически созданный платеж",
+):
+
+    url = f"{MS_BASE_URL}/entity/paymentout"
+
+    expense_item_meta = get_expense_item_meta_by_name("Закупка товаров")
+
+    if not expense_item_meta:
+        raise ValueError("Не найдена статья расходов 'Закупка товаров'")
+
+    payload = {
+        "organization": {
+            "meta": organization_meta,
+        },
+        "organizationAccount": {
+            "meta": organization_account_meta,
+        },
+        "agent": {
+            "meta": counterparty_meta,
+        },
+        "sum": payment_sum,
+        "operations": [
+            {
+                "meta": supply_meta,
+            }
+        ],
+        "paymentPurpose": payment_purpose,
+
+        "expenseItem": {
+            "meta": expense_item_meta,
+        },
+    }
+
+    if invoice_date:
+        payload["moment"] = f"{invoice_date} 00:00:00"
+
+    response = requests.post(url, auth=MS_AUTH, json=payload)
+    print("PAYMENT OUT STATUS:", response.status_code)
+    print("PAYMENT OUT RESPONSE:", response.text)
 
     response.raise_for_status()
     return response.json()
