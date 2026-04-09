@@ -259,8 +259,10 @@ def create_payment_out_for_supply(
         organization_account_meta,
         supply_meta,
         payment_sum,
+        invoice_date=None,
         payment_purpose="Автоматически созданный платеж",
 ):
+
     url = f"{MS_BASE_URL}/entity/paymentout"
 
     expense_item_meta = get_expense_item_meta_by_name("Закупка товаров")
@@ -290,6 +292,9 @@ def create_payment_out_for_supply(
             "meta": expense_item_meta,
         },
     }
+
+    if invoice_date:
+        payload["moment"] = f"{invoice_date} 00:00:00"
 
     response = requests.post(url, auth=MS_AUTH, json=payload)
     print("PAYMENT OUT STATUS:", response.status_code)
