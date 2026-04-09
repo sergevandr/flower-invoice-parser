@@ -7,4 +7,4 @@ SUPPLIER_MAP = {
 }
 
 AUTO_PAYMENT_SUPPLIERS = {
-    "Ангар (ООО Цветы Оптом)"}
+    "ангар (ооо цветы оптом)"}
