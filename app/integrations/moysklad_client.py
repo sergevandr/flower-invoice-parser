@@ -241,6 +241,18 @@ def create_supply_draft(counterparty_meta, matched_items, invoice_number=None, i
     response.raise_for_status()
     return response.json()
 
+def get_expense_item_meta_by_name(name: str):
+    url = f"{MS_BASE_URL}/entity/expenseitem"
+    response = requests.get(url, auth=MS_AUTH)
+    response.raise_for_status()
+
+    rows = response.json().get("rows", [])
+    for row in rows:
+        if normalize_text(row["name"]) == normalize_text(name):
+            return row["meta"]
+
+    return None
+
 def create_payment_out_for_supply(
         counterparty_meta,
         organization_meta,
@@ -250,6 +262,11 @@ def create_payment_out_for_supply(
         payment_purpose="Автоматически созданный платеж",
 ):
     url = f"{MS_BASE_URL}/entity/paymentout"
+
+    expense_item_meta = get_expense_item_meta_by_name("Закупка товаров")
+
+    if not expense_item_meta:
+        raise ValueError("Не найдена статья расходов 'Закупка товаров'")
 
     payload = {
         "organization": {
@@ -268,6 +285,10 @@ def create_payment_out_for_supply(
             }
         ],
         "paymentPurpose": payment_purpose,
+
+        "expenseItem": {
+            "meta": expense_item_meta,
+        },
     }
 
     response = requests.post(url, auth=MS_AUTH, json=payload)
