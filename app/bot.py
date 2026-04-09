@@ -154,6 +154,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     organization_account_meta=DEFAULT_ORGANIZATION_ACCOUNT_META,
                     supply_meta=supply["meta"],
                     payment_sum=supply_sum,
+                    invoice_date=invoice_date,
                     payment_purpose=f"Оплата по приёмке {supply.get('name')}",
                 )
 
