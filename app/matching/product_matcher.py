@@ -153,7 +153,7 @@ def find_top_products(raw_name: str, df, top_n=3):
             score += 80
 
         if "цветы срезанные" in group_name_l:
-            score += 60с
+            score += 60
 
         product_type = detect_flower_type(product_name_l + " " + group_name_l)
 
