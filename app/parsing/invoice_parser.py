@@ -31,7 +31,7 @@ def parse_invoice_image(image_path: str) -> str:
     print("MAPPED SUPPLIER (PARSER):", mapped_supplier)
 
     # 👇 выбираем промпт
-    if mapped_supplier == "Ангар (ООО Цветы Оптом)":
+    if mapped_supplier == "ИП Мандрыкин / Премьер":
         prompt = MANDRYKIN_PROMPT
         print("USING MANDRYKIN PROMPT")
     else:
