@@ -4,7 +4,7 @@ from app.matching.supplier_mapping import SUPPLIER_MAP
 from app.common.utils import retry
 import json
 import requests
-from app.config import MS_BASE_URL,
+from app.config import MS_BASE_URL, MS_AUTH
 
 def normalize_text(text: str) -> str:
     return (
