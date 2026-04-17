@@ -41,18 +41,29 @@ def fix_mandrykin_items(items):
     fixed = []
 
     for item in items:
+        raw_name = item.get("raw_name")
         qty = item.get("qty")
-        price = item.get("price")
+        total_sum = item.get("total_sum")
 
-        if qty is None or price is None:
-            print("FIX MANDRYKIN: skip item with missing qty/price", item)
+        if not raw_name or qty is None or total_sum is None:
+            print("FIX MANDRYKIN: skip incomplete item", item)
+            continue
+
+        if qty <= 0:
+            print("FIX MANDRYKIN: skip invalid qty", item)
             continue
 
         if qty > 300:
             print("FIX MANDRYKIN: suspicious qty, skipping item", item)
             continue
 
-        fixed.append(item)
+        price = round(float(total_sum) / float(qty), 2)
+
+        fixed.append({
+            "raw_name": raw_name,
+            "qty": qty,
+            "price": price,
+        })
 
     return fixed
 
