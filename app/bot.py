@@ -51,6 +51,25 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = json.loads(cleaned)
         items = data.get("items", [])
 
+        def fix_mandrykin_items(items):
+            fixed = []
+
+            for item in items:
+                qty = item["qty"]
+                price = item["price"]
+
+                # если qty выглядит как код (у Мандрыкина это частая проблема)
+                if qty > 300:
+                    print("FIX MANDRYKIN: suspicious qty", item)
+                    continue
+
+                fixed.append(item)
+
+            return fixed
+
+        if mapped_supplier == "ИП Мандрыкин / Премьер":
+            items = fix_mandrykin_items(items)
+
         # --- отдельный запрос на поставщика ---
         supplier_result = parse_supplier_only(file_path)
         print("RAW SUPPLIER RESULT:")
