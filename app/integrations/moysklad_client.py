@@ -294,6 +294,8 @@ def create_payment_out_for_supply(
         "expenseItem": {
             "meta": expense_item_meta,
         },
+
+        "shared": True,
     }
 
     if invoice_date:
