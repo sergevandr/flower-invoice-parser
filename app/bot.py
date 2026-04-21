@@ -7,29 +7,71 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
-from app.matching.product_matcher import find_top_products
-from app.config import (OPENAI_API_KEY, TELEGRAM_BOT_TOKEN, MS_BASE_URL, MS_AUTH)
-
-from app.parsing.invoice_parser import (parse_invoice_image, parse_supplier_only, clean_json_text)
-from app.integrations.moysklad_client import (map_supplier_name, search_counterparty_best, create_supply_draft, normalize_text, )
+from app.config import (
+    OPENAI_API_KEY,
+    TELEGRAM_BOT_TOKEN,
+    MS_BASE_URL,
+    MS_AUTH,
+    DEFAULT_ORGANIZATION_ACCOUNT_META,
+)
+from app.parsing.invoice_parser import (
+    parse_invoice_image,
+    parse_supplier_only,
+    clean_json_text,
+)
+from app.integrations.moysklad_client import (
+    map_supplier_name,
+    search_counterparty_best,
+    create_supply_draft,
+    create_payment_out_for_supply,
+    normalize_text,
+)
 from app.matching.product_catalog import load_products
+from app.matching.product_matcher import find_top_products
 from app.matching.supplier_mapping import AUTO_PAYMENT_SUPPLIERS
-from app.integrations.moysklad_client import create_payment_out_for_supply
-from app.config import DEFAULT_ORGANIZATION_ACCOUNT_META
-from app.integrations.moysklad_client import normalize_text
-
-from app.config import DEFAULT_ORGANIZATION_ACCOUNT_META
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 print("client accepted")
 
 TOKEN = TELEGRAM_BOT_TOKEN
-
 FALLBACK_SUPPLIER_NAME = "Прочие поставщики"
+
+
+def fix_mandrykin_items(items):
+    fixed = []
+
+    for item in items:
+        raw_name = item.get("raw_name")
+        qty = item.get("qty")
+        total_sum = item.get("total_sum")
+
+        if not raw_name or qty is None or total_sum is None:
+            print("FIX MANDRYKIN: skip incomplete item", item)
+            continue
+
+        if qty <= 0:
+            print("FIX MANDRYKIN: skip invalid qty", item)
+            continue
+
+        if qty > 300:
+            print("FIX MANDRYKIN: suspicious qty, skipping item", item)
+            continue
+
+        price = round(float(total_sum) / float(qty), 2)
+
+        fixed.append({
+            "raw_name": raw_name,
+            "qty": qty,
+            "price": price,
+        })
+
+    return fixed
+
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("PHOTO RECEIVED")
     supplier = None
+    mapped_supplier = None
 
     photo = update.message.photo[-1]
     file = await context.bot.get_file(photo.file_id)
@@ -66,6 +108,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mapped_supplier = map_supplier_name(supplier)
         print("RAW SUPPLIER:", supplier)
         print("MAPPED SUPPLIER:", mapped_supplier)
+
+        # --- supplier-specific post-processing ---
+        if mapped_supplier == "ИП Мандрыкин / Премьер":
+            items = fix_mandrykin_items(items)
 
         counterparty = search_counterparty_best(mapped_supplier)
 
@@ -136,9 +182,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         payment_link = None
 
         print("COUNTERPARTY NAME:", counterparty["name"])
-
         normalized_name = normalize_text(counterparty["name"])
-
         print("NORMALIZED COUNTERPARTY NAME:", normalized_name)
         print("AUTO PAYMENT SUPPLIERS:", AUTO_PAYMENT_SUPPLIERS)
 
@@ -163,32 +207,29 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         positions_count = len([x for x in matched if x["id"]])
 
-        extra_info = ""
-
-        if invoice_number:
-            extra_info += f"\nНомер накладной: {invoice_number}"
-
-        if invoice_date:
-            extra_info += f"\nДата накладной: {invoice_date}"
-
         text = ""
 
         if supplier_warning:
             text += "⚠️ <b>Поставщик не распознан уверенно</b>\n"
-            text += f"⚠️ <b>В приёмку подставлен контрагент:</b> {html.escape(FALLBACK_SUPPLIER_NAME)}\n\n"
+            text += (
+                f"⚠️ <b>В приёмку подставлен контрагент:</b> "
+                f"{html.escape(FALLBACK_SUPPLIER_NAME)}\n\n"
+            )
 
         if payment:
-            text += "<b>❗️Платёж:</b> создан\n"
+            text += "<b>Платёж:</b> создан\n"
 
         if payment_link:
             text += f"<a href=\"{html.escape(payment_link)}\">Открыть платёж</a>\n"
 
         text += f"<b>Поставщик из накладной:</b> {html.escape(str(supplier))}\n"
         text += f"<b>Контрагент в МойСклад:</b> {html.escape(str(counterparty['name']))}\n"
-        text += "<b>Статус:</b> Черновик приёмки создан\n"
 
         if supply_link:
-            text += f"<b>Ссылка:</b> <a href=\"{html.escape(supply_link)}\">Открыть приёмку в МойСклад</a>\n"
+            text += (
+                f"<b>Ссылка:</b> "
+                f"<a href=\"{html.escape(supply_link)}\">Открыть приёмку в МойСклад</a>\n"
+            )
 
         text += f"<b>Позиций:</b> {positions_count}\n"
         text += "\n<b>Позиции:</b>\n"
@@ -214,7 +255,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             disable_web_page_preview=True,
         )
 
-
     except Exception as e:
         import traceback
 
@@ -226,13 +266,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(f"Ошибка обработки: {e}")
 
+
 def test_moysklad_connection():
     url = f"{MS_BASE_URL}/entity/product?limit=1"
     response = requests.get(url, auth=MS_AUTH)
     print("MS STATUS:", response.status_code)
     print(response.text[:500])
 
+
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
 if __name__ == "__main__":
     app.run_polling()

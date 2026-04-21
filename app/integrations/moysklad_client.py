@@ -1,4 +1,5 @@
 from rapidfuzz import fuzz
+import re
 from app.matching.supplier_mapping import SUPPLIER_MAP
 from app.common.utils import retry
 import json
@@ -223,13 +224,8 @@ def create_supply_draft(counterparty_meta, matched_items, invoice_number=None, i
         "description": description,
     }
 
-    if invoice_number:
-        payload["incomingNumber"] = invoice_number
-
-    if invoice_date:
+    if invoice_date and re.fullmatch(r"\d{4}-\d{2}-\d{2}", invoice_date):
         payload["incomingDate"] = f"{invoice_date} 00:00:00"
-
-    if invoice_date:
         payload["moment"] = f"{invoice_date} 00:00:00"
 
 
