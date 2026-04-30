@@ -15,3 +15,10 @@ DEFAULT_ORGANIZATION_ACCOUNT_META = {
     "type": "account",
     "mediaType": "application/json",
 }
+
+DEFAULT_GROUP_META = {
+    "href": "https://api.moysklad.ru/api/remap/1.2/entity/group/b4e07c18-4052-11ea-0a80-006f000a08c3",
+    "metadataHref": "https://api.moysklad.ru/api/remap/1.2/entity/group/metadata",
+    "type": "group",
+    "mediaType": "application/json",
+}
