@@ -69,6 +69,38 @@ def fix_mandrykin_items(items):
 
     return fixed
 
+def normalize_item_prices(items):
+    normalized = []
+
+    for item in items:
+        raw_name = item.get("raw_name")
+        qty = item.get("qty")
+        total_sum = item.get("total_sum")
+
+        if not raw_name or qty is None:
+            print("SKIP ITEM WITHOUT RAW_NAME OR QTY:", item)
+            continue
+
+        if total_sum is not None:
+            if float(qty) <= 0:
+                print("SKIP ITEM WITH INVALID QTY:", item)
+                continue
+
+            price = round(float(total_sum) / float(qty), 2)
+        else:
+            price = item.get("price")
+
+        if price is None:
+            print("SKIP ITEM WITHOUT PRICE:", item)
+            continue
+
+        normalized.append({
+            "raw_name": raw_name,
+            "qty": qty,
+            "price": price,
+        })
+
+    return normalized
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("PHOTO RECEIVED")
@@ -94,6 +126,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         data = json.loads(cleaned)
         items = data.get("items", [])
+        items = normalize_item_prices(items)
 
         # --- отдельный запрос на поставщика ---
         supplier_result = parse_supplier_only(file_path)
