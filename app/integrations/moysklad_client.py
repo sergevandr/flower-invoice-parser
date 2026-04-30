@@ -4,7 +4,7 @@ from app.matching.supplier_mapping import SUPPLIER_MAP
 from app.common.utils import retry
 import json
 import requests
-from app.config import MS_BASE_URL, MS_AUTH
+from app.config import MS_BASE_URL, MS_AUTH, DEFAULT_GROUP_META
 
 def normalize_text(text: str) -> str:
     return (
@@ -290,7 +290,10 @@ def create_payment_out_for_supply(
         "expenseItem": {
             "meta": expense_item_meta,
         },
+        "group": {
 
+            "meta": DEFAULT_GROUP_META,
+        },
         "shared": True,
     }
 
